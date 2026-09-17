@@ -1,0 +1,179 @@
+\documentclass[11pt]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[serbian]{babel}
+\usepackage[margin=1.9cm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{enumitem}
+\usepackage{amsthm}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{titlesec}
+\usepackage{booktabs}
+
+\titlespacing*{\section}{0pt}{5pt}{2pt}
+\titlespacing*{\subsection}{0pt}{3pt}{1pt}
+\setlength{\parskip}{1pt}
+\setlength{\abovedisplayskip}{2pt}
+\setlength{\belowdisplayskip}{2pt}
+\setlength{\textfloatsep}{3pt}
+\setlength{\floatsep}{2pt}
+\setlength{\intextsep}{2pt}
+\renewcommand{\baselinestretch}{0.96}
+
+\theoremstyle{definition}
+\newtheorem{definition}{Definicija}[section]
+\newtheorem{theorem}{Teorema}[section]
+\floatname{algorithm}{Algoritam}
+
+\hypersetup{colorlinks=true, linkcolor=blue, urlcolor=blue, citecolor=blue}
+
+\begin{document}
+\sloppy
+
+\title{\vspace{-1.5cm}Problem \emph{Polyline Simplification}
+\\[0.2cm]
+\small{Projekat iz predmeta Geometrijski algoritmi\\ Matematički fakultet, Univerzitet u Beogradu}}
+\author{Boško Andrić, 1012/2025\\ \texttt{mi251012@alas.matf.bg.ac.rs}}
+\date{\today}
+\maketitle
+
+\vspace{-0.5cm}
+\tableofcontents
+\vspace{0.3cm}
+
+\section{Uvod i opis problema}
+
+Smanjivanje broja tačaka na krivim linijama je čest zadatak u kartografiji i obradi geografskih podataka. Problem \emph{Polyline Simplification} sa Kattis platforme \cite{kattis} traži da se iz izlomljene linije date nizom tačaka $P = (p_0, p_1, \ldots, p_n)$ izbace manje važne tačke. Cilj je da od početnih $n+1$ temena ostane tačno $m$ segmenata, a da linija zadrži svoj prepoznatljiv oblik.
+
+U ovom projektu primenjen je Visvalingam--Whyatt algoritam \cite{visvalingam1993}. Važnost svake unutrašnje tačke računa se na osnovu površine trougla koji ona pravi sa svojim susedima. U svakom koraku izbacuje se tačka sa najmanjom površinom trougla. Ako više tačaka ima istu površinu, prva se izbacuje ona sa manjim indeksnim brojem.
+
+Ako bismo u svakom koraku tražili najmanju površinu prolaskom kroz sve tačke, složenost bi bila $O(n^2)$. Korišćenjem pametnijih struktura podataka, taj posao smanjujemo na vremensku složenost $O(n \log n)$ uz memorijsku složenost $O(n)$.
+
+\section{Geometrijski princip}
+
+\subsection{Dvostruka površina trougla}
+
+Za unutrašnju tačku $p_i = (x_i, y_i)$ posmatramo trougao koji ona čini sa susedima $p_{i-1}$ i $p_{i+1}$.
+
+\begin{definition}[Površina trougla]
+\label{def:povrsina}
+Važnost tačke $p_i$ jednaka je površini trougla $\triangle(p_{i-1}, p_i, p_{i+1})$. Da bismo izbegli rad sa razlomcima i deljenjem, računamo dvostruku površinu pomoću vektorskog proizvoda:
+\[
+\mathcal{A}(p_{i-1}, p_i, p_{i+1}) = \big| (x_i - x_{i-1})(y_{i+1} - y_{i-1}) - (y_i - y_{i-1})(x_{i+1} - x_{i-1}) \big|
+\]
+\end{definition}
+
+Sva poređenja radimo direktno preko ovih celobrojnih vrednosti $\mathcal{A}$, što ubrzava algoritam i izbegava greške pri zaokruživanju.
+
+\subsection{Lokalni efekat izbacivanja}
+
+Efikasnost algoritma oslanja se na činjenicu da brisanje jedne tačke utiče samo na njene prve susede:
+
+\begin{theorem}[Lokalno osvežavanje]
+\label{thr:lokalnost}
+Uklanjanje tačke $p_i$ menja trouglove samo za njenog prethodnika $p_{\text{prev}(i)}$ i njenog sledbenika $p_{\text{next}(i)}$. Površine ostalih trouglova ostaju potpuno iste.
+\end{theorem}
+
+\begin{proof}
+Kada obrišemo tačku $p_i$, spajaju se njeni susedi $p_L$ i $p_R$. Zbog toga se menja trougao za $p_L$ i trougao za $p_R$. Pošto se ostale tačke i njihove veze nisu menjale, njihove površine ostaju nepromenjene.
+\end{proof}
+
+Zahvaljujući ovome, posle svakog brisanja ažuriramo površine za samo dve susedne tačke u $O(\log n)$ vremenu, umesto da računamo sve ponovo.
+
+\section{Struktura programa i algoritam}
+
+Program je napisan u C++17 jeziku koristeći Qt 6 za prikaz. Logika algoritma nalazi se u \texttt{src/efficientsimplifier.cpp}, dok se prikaz i prozor nalaze u \texttt{src/canvas.cpp} i \texttt{src/mainwindow.cpp}.
+
+\subsection{Strukture podataka za $O(n \log n)$ složenost}
+
+Za postizanje $O(n \log n)$ složenosti upotrebljene su dve strukture:
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{Dvostruko povezana lista (preko nizova):} Nizovi \texttt{prev\_neighbor} i \texttt{next\_neighbor} služe da u $O(1)$ vremenu nađemo i prevežemo susede kada se tačka obriše.
+    \item \textbf{Prioritetni skup (\texttt{std::set}):} Čuva indekse tačaka i njihove površine. Skup je sortiran primarno po površini (od najmanje ka najvećoj), a sekundarno po indeksu tačke.
+\end{enumerate}
+
+\subsection{Koraci algoritma}
+
+Algoritam~\ref{alg:polyline} prikazuje jednostavan tok simplifikacije.
+
+\begin{algorithm}[h]
+\caption{Simplifikacija polilinije u $O(n \log n)$ vremenu}
+\label{alg:polyline}
+\begin{algorithmic}[1]
+\Function{VisvalingamSimplify}{$P = (p_0, \ldots, p_n)$, $m$}
+    \State Inicijalizuj nizove \texttt{prev\_neighbor} i \texttt{next\_neighbor}
+    \State $Q \gets \emptyset$ \Comment{Prioritetni skup \texttt{std::set}}
+    \For{$i \gets 1$ \textbf{to} $n-1$}
+        \State $\text{area}[i] \gets \text{ComputeDoubleArea}(p_{i-1}, p_i, p_{i+1})$
+        \State $Q.\text{insert}(\{i, \text{area}[i]\})$
+    \EndFor
+    \State $count \gets n+1$
+    \While{$count > m+1$ \textbf{and} $Q \neq \emptyset$}
+        \State $min\_elem \gets Q.\text{extract\_min}()$ \Comment{Uzimamo najmanju površinu u $O(\log n)$}
+        \State $idx \gets min\_elem.index$, $L \gets \text{prev}[idx]$, $R \gets \text{next}[idx]$
+        \State $\text{next}[L] \gets R$, $\text{prev}[R] \gets L$ \Comment{Prevezivanje suseda u $O(1)$}
+        \State Sačuvaj korak u istoriju za animaciju
+        \If{$L > 0$} \Comment{Ažuriraj levog suseda}
+            \State $Q.\text{erase}(\{L, \text{area}[L]\})$
+            \State $\text{area}[L] \gets \text{ComputeDoubleArea}(p_{\text{prev}[L]}, p_L, p_R)$
+            \State $Q.\text{insert}(\{L, \text{area}[L]\})$
+        \EndIf
+        \If{$R < n$} \Comment{Ažuriraj desnog suseda}
+            \State $Q.\text{erase}(\{R, \text{area}[R]\})$
+            \State $\text{area}[R] \gets \text{ComputeDoubleArea}(p_L, p_R, p_{\text{next}[R]})$
+            \State $Q.\text{insert}(\{R, \text{area}[R]\})$
+        \EndIf
+        \State $count \gets count - 1$
+    \EndWhile
+    \State \Return istorija koraka
+\EndFunction
+\end{algorithmic}
+\end{algorithm}
+
+\section{Složenost}
+
+\begin{center}
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{Korak} & \textbf{Složenost} & \textbf{Opis} \\
+\midrule
+Inicijalizacija i prve površine & $O(n)$ & Prolazak kroz sve tačke jednim nizom \\
+Pravljenje \texttt{std::set} stablom & $O(n \log n)$ & Ubacivanje $n-1$ elemenata u skup \\
+Uzimanje najmanje površine & $O(\log n)$ & Brisanje prvog elementa iz skupa \\
+Ažuriranje 2 susedne tačke & $O(\log n)$ & Izbacivanje i ponovno ubacivanje u skup \\
+Ukupno za sve izbačene tačke & $O(n \log n)$ & Mnogo brže od naivnog $O(n^2)$ pristupa \\
+\midrule
+\textbf{Utoršak memorije} & $O(n)$ & Čuvanje nizova suseda i stanja u skupu \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Naivni algoritam za $n = 100.000$ tačaka pravi oko $10^{10}$ računica, dok ova optimizovana verzija završava posao za manje od sekunde.
+
+\section{Prikaz u aplikaciji}
+
+Strogi poredak u \texttt{std::set} strukturi garantuje da će se uvek izbaciti tačna tačka propisana algoritmom.
+
+Aplikacija podržava dva načina prikaza:
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Algoritamski mod:} Prikazuje originalnu liniju sivom isprekidanom linijom, trenutnu liniju plavom bojom, a trougao koji se sledeći izbacuje označava crvenom bojom.
+    \item \textbf{Planinski mod (LOD):} Prikazuje liniju kao reljef planine. Kako se tačke izbacuju, slika se postepeno smanjuje i skalira, dajući efekat odaljavanja kamere.
+\end{itemize}
+
+\section{Zaključak}
+
+U projektu je uspešno napravljen Visvalingam--Whyatt algoritam za simplifikaciju polilinija u vremenu $O(n \log n)$. Spajanjem dvostruko povezane liste i balansiranog stabla postignuta je velika brzina rada. Grafički interfejs u Qt 6 okruženju omogućava jednostavan prikaz koraka algoritma i vizuelni efekat smanjenja detalja.
+
+\begin{thebibliography}{9}
+\bibitem{kattis} Kattis, \emph{Polyline Simplification}, \url{https://open.kattis.com/problems/polyline-simplification}.
+\bibitem{visvalingam1993} M.~Visvalingam, J.~D.~Whyatt, \emph{Line simplification by repeated elimination of points}, The Cartographic Journal, 30(1), 46-51, 1993.
+\bibitem{janicic} P.~Janičić, \emph{Računarska geometrija}, Matematički fakultet u Beogradu, 2025.
+\bibitem{cormen} T.~H.~Cormen et al., \emph{Introduction to Algorithms}, MIT Press, 2009.
+\bibitem{qt6} Qt Group, \emph{Qt 6 Documentation}, \url{https://doc.qt.io/qt-6/}.
+\end{thebibliography}
+
+\end{document}
